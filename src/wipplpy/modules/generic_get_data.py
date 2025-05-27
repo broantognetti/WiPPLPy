@@ -68,11 +68,13 @@ class Get:
             self.name = name
         self.signal = signal
 
+
     def __str__(self) -> str:
         if self.signal:
             return f"Get({self.call_string}, is_signal)"
         else:
             return f"Get({self.call_string})"
+        
 
     def full_str(self, index_range=None, sample_period=1):
         """
@@ -331,6 +333,20 @@ class Data:
 
         return index
 
+    def set_array_dimensions(self):
+        """
+        Function to be overwrriten when Data class is implemented for a specific data set
+
+        Parameters
+        ----------
+        dimension_names : list[str]
+            list of human readable dimension names. Should be consistent with WiPPLPy conventions --insert a link here to some info about common WiPPLPy dimensions and conventions--
+        dimension_units : list[str]
+            List of dimension units. Should be in a format consistent with astropy.units https://docs.astropy.org/en/stable/units/
+        """
+        self.dimension_units=[]
+        self.dimension_names=[]
+
     def _get_individuals(self, variable_booleans, get_calls):
         """
         Get all data that has a True boolean associated with it.
@@ -497,11 +513,11 @@ class Data:
         # Might be good to put the rest of these checks into a separate function, so it can be called here and in the gather_data_array
         if self.ignore_errors:
             try:
-                data = self.gather_data_array(node)
+                data = node.data()
             except Exception:
                 return np.array()
         else:
-            data = self.gather_data_array(node)
+            data = node.data()
 
         logging.debug("Got data from tree.")
         if change_data:
@@ -519,39 +535,43 @@ class Data:
 
         return data
 
-    def gather_data_array(self, mds_node, dimension_names=None, dimension_units=None):
+    def get_xarray(self, get_call, np_data_type=np.float64, change_data=True, load_from_saved=True):
         """
-        Package data along with dimensions and attributes into an xarray DataArray. Pulls data from MDSPlus or local files.
+        Get data and dimensions from MDSplus tree, then store in an xarray along with metadata and proper dimensions as defined in the class
 
         Parameters
         ----------
-        mds_node : MDSPlus.node
-            mdsplus node to which desired data is attached
-        dimension_names : list[str]
-            list of human readable dimension names. Should be consistent with WiPPLPy conventions --insert a link here to some info about common WiPPLPy dimensions and conventions
-        dimension_units : list[str]
-            List of dimension units. Should be in a format consistent with astropy.units https://docs.astropy.org/en/stable/units/
+        get_call : str
+            A string that defines the call to use on the tree.
+        np_data_type : data-type, default=np.float64
+            The numpy data type to change the data to.
+        change_data : bool, default=True
+            Whether to change the data type of what MDSplus returns.
+        load_from_saved : bool, default=True
+            Whether to try to load the data from the saved calls.
 
         Returns
         -------
-        array : xr.DataArray
-            DataArray with stored data and metadata
-
+        data : xarray DataArray
+            The data from the tree packaged into an xarray
         """
-        # get data first as numpy array
 
-        data = mds_node.data()
-        num_dimensions = data.ndim
+        self.set_array_dimensions()
 
-        if num_dimensions != len(dimension_units):
-            raise Exception(
-                "*** Number of dimension names and number of dimension units does not match"
-            )
+        dimension_units = self.dimension_units
+        dimension_names = self.dimension_names
+        print(type(connection))
+        num_dimensions = connection
+        if isinstance(num_dimensions, list) and isinstance(dimension_names, list):
+            if num_dimensions != len(dimension_units):
+                raise Exception(
+                    "*** Number of dimension names and number of dimension units does not match"
+                )
 
-        if num_dimensions != len(dimension_names):
-            raise Exception(
-                "*** Number of dimension names and number of data dimensions does not match"
-            )
+            if num_dimensions != len(dimension_names):
+                raise Exception(
+                    "*** Number of dimension names and number of data dimensions does not match"
+                )
 
         coords = {}
         dimension_units = {}
@@ -559,11 +579,11 @@ class Data:
         for dim_num, dim_name in dimension_names:
             coords[dim_name] = data.dim_of(dim_num).data()
             dimension_units[dim_name] = dimension_units
-
+        print(type(mds_node)) #delete me
         coords["shot_num"] = mds_node.shot
 
         # get the rest of the attributes together into
-        attributes = {"units": dimension_units, "call_string": "thing", "version": 1.0}
+        attributes = {"units": dimension_units, "call_string": self.call_string, "version": 1.0}
 
         data_xarray = xr.DataArray(
             data, dims=dimension_names, coords=coords, attrs=attributes
