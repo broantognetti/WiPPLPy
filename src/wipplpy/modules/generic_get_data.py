@@ -217,6 +217,10 @@ class Data:
 
         self._tree = None
 
+        #Make attributes for dimension_names and dimension_units if specified
+        self.units=[]
+        self.names=[]
+
         # Initialize the time index range as empty and then try to get something for it. We do this because some code in _to_time_index_range requires it.
         self.time_index_range = None
         self.sample_period = sample_period
@@ -232,6 +236,8 @@ class Data:
             )
         elif len(get_calls) == 0:
             logging.info("Did not do any get calls for preloading data into object.")
+
+        self.get_calls = get_calls
 
         # Hold all the calls and call data gotten from MDSplus.
         # TODO: Change how calls are saved so that we can change loaded attributes and save the update.
@@ -332,20 +338,6 @@ class Data:
             index = np.argmax(times >= time)
 
         return index
-
-    def set_array_dimensions(self):
-        """
-        Function to be overwrriten when Data class is implemented for a specific data set
-
-        Parameters
-        ----------
-        dimension_names : list[str]
-            list of human readable dimension names. Should be consistent with WiPPLPy conventions --insert a link here to some info about common WiPPLPy dimensions and conventions--
-        dimension_units : list[str]
-            List of dimension units. Should be in a format consistent with astropy.units https://docs.astropy.org/en/stable/units/
-        """
-        self.dimension_units=[]
-        self.dimension_names=[]
 
     def _get_individuals(self, variable_booleans, get_calls):
         """
@@ -535,7 +527,7 @@ class Data:
 
         return data
 
-    def get_xarray(self, get_call, np_data_type=np.float64, change_data=True, load_from_saved=True):
+    def get_xarray(self, np_data_type=np.float64, change_data=True, load_from_saved=True):
         """
         Get data and dimensions from MDSplus tree, then store in an xarray along with metadata and proper dimensions as defined in the class
 
@@ -555,42 +547,47 @@ class Data:
         data : xarray DataArray
             The data from the tree packaged into an xarray
         """
+        
+        units = self.units
+        names = self.names
+        get_call = self.get_calls[0]
+        print(get_call)
 
-        self.set_array_dimensions()
-
-        dimension_units = self.dimension_units
-        dimension_names = self.dimension_names
-        print(type(connection))
-        num_dimensions = connection
-        if isinstance(num_dimensions, list) and isinstance(dimension_names, list):
-            if num_dimensions != len(dimension_units):
+        #Needs to get expanded for multiple get_calls passed!!!!!!!!!!!!!&&&&&&&&&&&&&&&&&&&)))))))()()()
+        
+        data = self.get(get_call, np_data_type=np_data_type, change_data=change_data, load_from_saved=load_from_saved)
+        
+        num_dimensions = data.ndim
+        if isinstance(units, list) and isinstance(names, list):
+            if num_dimensions + 1 != len(units):
                 raise Exception(
                     "*** Number of dimension names and number of dimension units does not match"
                 )
 
-            if num_dimensions != len(dimension_names):
+            if num_dimensions + 1 != len(names):
                 raise Exception(
                     "*** Number of dimension names and number of data dimensions does not match"
                 )
 
-        coords = {}
-        dimension_units = {}
+        coords_dict = {}
+        units_dict = {}
 
-        for dim_num, dim_name in dimension_names:
-            coords[dim_name] = data.dim_of(dim_num).data()
-            dimension_units[dim_name] = dimension_units
-        print(type(mds_node)) #delete me
-        coords["shot_num"] = mds_node.shot
+        for dim_num, dim_name in enumerate(names[1:]):
+            coords_dict[dim_name] = self.get('DIM_OF('+ get_call + ', {:d})'.format(dim_num), np_data_type=np_data_type, change_data=change_data, load_from_saved=load_from_saved)
+            units_dict[dim_name] = units[dim_num+1]
+
+        units_dict[names[0]] = units[0]
+        
+        coords_dict["shot_num"] = int(self.get('$SHOT'))
 
         # get the rest of the attributes together into
-        attributes = {"units": dimension_units, "call_string": self.call_string, "version": 1.0}
+        attributes = {"units": units_dict, "call_string": get_call, "version": 1.0, 'tree': self.get('$EXPT', change_data = False)}
 
         data_xarray = xr.DataArray(
-            data, dims=dimension_names, coords=coords, attrs=attributes
+            data, dims=names[1:], coords=coords_dict, attrs=attributes
         )
 
-        self.xarray = data_xarray  # hmm which one
-        return data_xarray
+        self.xarray = data_xarray  
 
     def to_raw_index(self, time_index):
         """
