@@ -167,7 +167,7 @@ class Data:
     ):
         """
         Generic class for dealing with data from a remote MDSplus database.
-
+ 
         Parameters
         ----------
         tree : Connection or int

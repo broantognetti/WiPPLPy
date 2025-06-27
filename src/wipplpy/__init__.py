@@ -8,3 +8,4 @@ __all__ = [
 ]
 
 from wipplpy import modules
+from .mst.diagnostics.summary import PlasmaCurrent
